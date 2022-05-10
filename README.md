@@ -1,4 +1,4 @@
-# *JAMEd* - *Y*et *A*nothere *M*olecular *Ed*itor
+# *JAMEd* - *Y*et *A*nother *M*olecular *Ed*itor
 This project developes a tool to create and manipulate 3D representations of molecules. The goal is to implement 
 + a graphical user interface, 
 + symmetry detection, symmetry operations, 
