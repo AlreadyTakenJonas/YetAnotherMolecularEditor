@@ -13,7 +13,7 @@ import tempfile
 import yaml
 from zipfile import ZipFile
 from typing import Union
-from version import __version__
+from .version import __version__
 from packaging import version
 
 # Create logger
