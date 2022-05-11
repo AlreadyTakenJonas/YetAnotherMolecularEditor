@@ -80,6 +80,15 @@ class StateRegistry:
         # Create dictionary to save meta data
         self._metadata      = META_DATA
         
+    def createMolecule(self):
+        existingMoleculeIDs = self._moleculeTable.moleculeID
+        for newID in range( len(existingMoleculeIDs)+1 ):
+            if newID not in existingMoleculeIDs: break
+        newMoleculeID = i
+    
+    def destroyMolecule(self, moleculeID:int):
+        pass
+        
     def save(self, path:Union[str, Path], override:bool=False):
         """
         Save the instance of this class to a zip archive. Can be reinstantiated with load method.
