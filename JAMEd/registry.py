@@ -16,6 +16,8 @@ from typing import Union
 from .version import __version__
 from packaging import version
 from pint import Quantity
+from . import PINT_UNIT_REGISTRY
+import re
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -29,8 +31,9 @@ log.addHandler(logging.NullHandler())
 ATOM_PROPERTY_LIST = [
     "moleculeID",   # To which molecule does the atom belong (unique identifier for molecule)?
     "atomID",       # Unique ID
+    "label",        # Descriptive label
     "element",      # How many protons does the atom has?
-    "mass",         # How much mass does the atom has?
+    "mass",         # How much mass does the atom has (not the exact mass, rounded to integer)?
     "charge",       # How much charge does the atom has? 
     "cartesian",    # Where is the atom in 3D space (tupel of three coordinates)?
     "fixedInternalCoordinates", # Is the atom fixed in space (internal coordinates)?
@@ -80,6 +83,9 @@ class StateRegistry:
         self._settings      = DEFAULT_SETTINGS
         # Create dictionary to save meta data
         self._metadata      = META_DATA
+        # Create periodic table of the elements (contains information about elements, used to create new atoms)
+        self._periodicTable = pd.read_csv("data/periodicTable.csv")
+        
         
     def addMolecule(self, amount:int=1) -> list[int]:
         """
@@ -116,25 +122,59 @@ class StateRegistry:
     def destroyMolecule(self, moleculeID:list[int]):
         raise NotImplementedError("Molecules can't be deleted yet.")
         
-    def addAtom(self, moleculeID:int, specie:str, coordinates:tuple[Quantity]):
+    def addAtom(self, moleculeID:int, specie:str, coordinates:Quantity):
+        
+        #
+        # TODO: COMMENT, DOCSTRING
+        #
+        
         assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
         assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
-        for coord in coordinates:
-            assert isinstance(coord, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
+        assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
+        assert len(coordinates) == 3, f"You need to pass three coordinates! {len(coordinates)} was given!"
         
-        newAtomID = max(self._atomTable.atomID) + 1
+        elementSymbol = re.findall("[A-Z][a-z]?", specie)[0]
+        
+        element = self._periodicTable.loc[self._periodicTable.symbol.str.fullmatch(elementSymbol)]
+        if len(element) == 0: raise  ValueError(f"I don't know the element {elementSymbol}!")
+        
+        mass = re.findall("^\d+", specie)
+        if len(mass) == 0: mass = int(element.mass)
+        else:              mass = int(mass)
+        charge = re.findall("\d*[+,-]", specie)
+        if len(charge) == 0: charge = 0
+        else:
+            charge = charge[1]
+            number = charge[:-1]
+            sign   = charge[-1]
+            charge = int(f"{sign}{number}")
+        
+        # Convert coordinates to angstrom and then to float numbers
+        coordinates = tuple([ float(coord.to("angstrom") / PINT_UNIT_REGISTRY.angstrom) for coord in coordinates ])
+        
+        if len(self._atomTable) == 0: newAtomID = 0
+        else:                         newAtomID = max(self._atomTable.atomID) + 1
         newAtom = pd.DataFrame({"moleculeID": [moleculeID],
-                                "newAtomID": [newAtomID],
-                                "cartesian": [ tuple([coord.to("angstrom") for coord in coordinates]) ]
+                                "atomID": [newAtomID],
+                                "cartesian": [coordinates],
+                                "label": [elementSymbol],
+                                "element": element.element,
+                                "charge": [charge],
+                                "mass": [mass],
+                                "color": element.color,
+                                "radius": element.radius,
+                                "fixedInternalCoordinates": [False]
                                })
-        # TODO: READ PROPERTIES OF SPECIE FROM CONFIG FILE
-        # TODO: COMBINE PROPERTIES AND newAtom dataframe
-        # TODO: ADD newAtom as new row to self._atomTable
-        # TODO: COMMENTS. IN addMolecule AS WELL.
+        
+        self._atomTable = pd.concat([self._atomTable, newAtom], ignore_index=True)
+        
         return newAtomID
     
-        def destroyAtom(self, atomID:list[int]):
-            raise NotImplementedError("Atoms can't be deleted yet.")
+    def destroyAtom(self, atomID:list[int]):
+        raise NotImplementedError("Atoms can't be deleted yet.")
+        
+    def replaceAtom(self, atomID:int, specie:str):
+        raise NotImplementedError("Replacing Atoms not implemented yet.")
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
