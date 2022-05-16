@@ -31,17 +31,17 @@ ATOM_PROPERTY_LIST = [
     "element",      # How many protons does the atom has?
     "mass",         # How much mass does the atom has?
     "charge",       # How much charge does the atom has? 
-    "cartesian_x",  # Where is the atom in 3D space?
-    "cartesian_y",  # Where is the atom in 3D space?
-    "cartesian_z",  # Where is the atom in 3D space?
+    "cartesian",    # Where is the atom in 3D space (tupel of three coordinates)?
     "fixedInternalCoordinates", # Is the atom fixed in space (internal coordinates)?
     "color",        # What color does the atom have when shown on the screen?
     "radius"        # How big is the atom?
 ]
 # What will be saved about every molecule?
 MOLECULE_PROPERTY_LIST = [
-    "moleculeID",   # Unique ID
-    "name"          # Descriptive name
+    "moleculeID",       # Unique ID
+    "name",             # Descriptive name
+    "centerOfInertia",  # Coordinates of center of inertia in 3D space (tupel of three coordinates)?
+    "symmetry"          # Molecules point group
 ]
 # What will be saved about every bond in a molecule?
 BOND_PROPERTY_LIST = [
@@ -80,14 +80,31 @@ class StateRegistry:
         # Create dictionary to save meta data
         self._metadata      = META_DATA
         
-    def createMolecule(self):
-        existingMoleculeIDs = self._moleculeTable.moleculeID
-        for newID in range( len(existingMoleculeIDs)+1 ):
-            if newID not in existingMoleculeIDs: break
-        newMoleculeID = i
+    def createMolecule(self, amount=1):
+        """
+        Create new entries in the molecule registry.
+
+        Parameters
+        ----------
+        amount : int, optional
+            Number of atoms to create. The default is 1.
+
+        Returns
+        -------
+        newMoleculeID : list of int
+            The ids of all created molecules.
+
+        """
+        if len(self._moleculeTable) == 0: newMoleculeID = 0
+        else:                             newMoleculeID = max(self._moleculeTable.moleculeID) + 1
+        newMoleculeID = [ newMoleculeID + i for i in range(amount) ]
+        newMolecule = pd.DataFrame(columns = MOLECULE_PROPERTY_LIST)
+        newMolecule.moleculeID = newMoleculeID
+        self._moleculeTable = pd.concat([self._moleculeTable, newMolecule], ignore_index = True)
+        return newMoleculeID
     
     def destroyMolecule(self, moleculeID:int):
-        pass
+        raise NotImplementedError("Molecules can't be deleted yet.")
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
