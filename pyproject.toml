@@ -4,7 +4,8 @@ dynamic = ["version"]
 dependencies = [
     "pathlib",
     "pandas",
-    "packaging"
+    "packaging",
+    "pint"
 ]
 
 [build-system]

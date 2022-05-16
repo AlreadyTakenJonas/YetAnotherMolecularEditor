@@ -15,6 +15,7 @@ from zipfile import ZipFile
 from typing import Union
 from .version import __version__
 from packaging import version
+from pint import Quantity
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ class StateRegistry:
         # Create dictionary to save meta data
         self._metadata      = META_DATA
         
-    def createMolecule(self, amount=1):
+    def addMolecule(self, amount:int=1) -> list[int]:
         """
         Create new entries in the molecule registry.
 
@@ -95,6 +96,7 @@ class StateRegistry:
             The ids of all created molecules.
 
         """
+        # TODO: COMMENT
         if len(self._moleculeTable) == 0: newMoleculeID = 0
         else:                             newMoleculeID = max(self._moleculeTable.moleculeID) + 1
         newMoleculeID = [ newMoleculeID + i for i in range(amount) ]
@@ -103,8 +105,28 @@ class StateRegistry:
         self._moleculeTable = pd.concat([self._moleculeTable, newMolecule], ignore_index = True)
         return newMoleculeID
     
-    def destroyMolecule(self, moleculeID:int):
+    def destroyMolecule(self, moleculeID:list[int]):
         raise NotImplementedError("Molecules can't be deleted yet.")
+        
+    def addAtom(self, moleculeID:int, specie:str, coordinates:tuple[Quantity]):
+        assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
+        assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
+        for coord in coordinates:
+            assert isinstance(coord, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
+        
+        newAtomID = max(self._atomTable.atomID) + 1
+        newAtom = pd.DataFrame({"moleculeID": [moleculeID],
+                                "newAtomID": [newAtomID],
+                                "cartesian": [ tuple([coord.to("angstrom") for coord in coordinates]) ]
+                               })
+        # TODO: READ PROPERTIES OF SPECIE FROM CONFIG FILE
+        # TODO: COMBINE PROPERTIES AND newAtom dataframe
+        # TODO: ADD newAtom as new row to self._atomTable
+        # TODO: COMMENTS. IN addMolecule AS WELL.
+        return newAtomID
+    
+        def destroyAtom(self, atomID:list[int]):
+            raise NotImplementedError("Atoms can't be deleted yet.")
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
