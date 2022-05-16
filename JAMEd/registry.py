@@ -96,13 +96,21 @@ class StateRegistry:
             The ids of all created molecules.
 
         """
-        # TODO: COMMENT
+        # Create a new ID for the molecule.
+        # Set ID to 0 if there are no molecules in registry yet
         if len(self._moleculeTable) == 0: newMoleculeID = 0
+        # Get the highest ID already taken and add 1 to get the new ID
         else:                             newMoleculeID = max(self._moleculeTable.moleculeID) + 1
+        # Generate list of molecule IDs. Can generatet multiple IDs to create multiple molecules at once.
         newMoleculeID = [ newMoleculeID + i for i in range(amount) ]
-        newMolecule = pd.DataFrame(columns = MOLECULE_PROPERTY_LIST)
-        newMolecule.moleculeID = newMoleculeID
+        
+        # Create a new row to insert into the self._moleculeTable
+        newMolecule = pd.DataFrame({"moleculeID": newMoleculeID,
+                                    "name": [ f"Molecule #{ID}" for ID in newMoleculeID ]})
+        # Insert the new row into the molecule table
         self._moleculeTable = pd.concat([self._moleculeTable, newMolecule], ignore_index = True)
+        
+        # Return IDs of generated molecules.
         return newMoleculeID
     
     def destroyMolecule(self, moleculeID:list[int]):
