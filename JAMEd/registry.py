@@ -170,8 +170,58 @@ class StateRegistry:
         
         return newAtomID
     
-    def destroyAtom(self, atomID:list[int]):
-        raise NotImplementedError("Atoms can't be deleted yet.")
+    def destroyAtom(self, atomID:list[int], recursive:bool = True):
+        """
+        Remove atoms from a molecule. TODO: DOCSTRING.
+
+        Parameters
+        ----------
+        atomID : list[int]
+            DESCRIPTION.
+        recursive : bool, optional
+            DESCRIPTION. The default is True.
+
+        Raises
+        ------
+        this
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        # Check if the atomID is iterable.
+        # Save the result in the variable iterable.        
+        try:
+            _ = iter(atomID)
+        except TypeError:
+            iterable = False
+        else:
+            iterable = True
+            # atomID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
+            assert recursive, "Cannot destroy this iterable with atomIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass a iterable of iterables. It will always raise this exception."
+        
+        # Is atomID a iterable? If yes loop over it and call this function on each element.
+        if iterable:
+            for atom in atomID:
+                self.destroyAtom(atom, recursive=False)
+        
+        # If atomID is not iterable, delete the atom from the molecule
+        else:
+            # Is the atomID an integer?
+            assert isinstance(atomID, int), "Destroying atom failed! AtomID must be integer or itereable of integer!"
+            
+            # Get the moleculeID the deleted atom belongs to. Used to delete the molecule, if all its atoms are deleted.
+            moleculeID = self._atomTable.loc[ self._atomTable["atomID"] == atomID ]["moleculeID"]
+            # Remove the atom from the registry.
+            self._atomTable = self._atomTable[self._atomTable.atomID != atomID]
+            # Count the number of atoms left in the molecule.
+            numberOfAtomsInMolecule = len(self._atomTable[self._atomTable.moleculeID == moleculeID].index)
+            # Delete the molecule, if it does not contain any atoms.
+            if numberOfAtomsInMolecule == 0:
+                self.destroyMolecule(moleculeID)
         
     def replaceAtom(self, atomID:int, specie:str):
         raise NotImplementedError("Replacing Atoms not implemented yet.")
