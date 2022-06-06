@@ -119,8 +119,34 @@ class StateRegistry:
         # Return IDs of generated molecules.
         return newMoleculeID
     
-    def destroyMolecule(self, moleculeID:list[int]):
-        raise NotImplementedError("Molecules can't be deleted yet.")
+    def destroyMolecule(self, moleculeID:list[int], recursive:bool=True):
+        
+        # Check if the moleculeID is iterable.
+        # Save the result in the variable iterable.        
+        try:
+            _ = iter(moleculeID)
+        except TypeError:
+            iterable = False
+        else:
+            iterable = True
+            # moleculeID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
+            assert recursive, "Cannot destroy this iterable with moleculeIDs! Pass recursive=True to destroy every molecule in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
+        
+        # Is atomID a iterable? If yes loop over it and call this function on each element.
+        if iterable:
+            for molecule in moleculeID:
+                self.destroyMolecule(molecule, recursive=False)
+        
+        # If moleculeID is not iterable, delete the molecule
+        else:
+            # Is the moleculeID an integer?
+            assert isinstance(moleculeID, int), "Destroying molecule failed! MoleculeID must be integer or itereable of integer!"
+            
+            # Get a list of all atomIDs belonging to the deleted molecule
+            garbageAtoms = self._atomTable[ self._atomTable.moleculeID == moleculeID ].atomID
+            # Destroy all atoms belonging to the molecule. After all atoms are destroyed, the molecule will be removed from the _moleculeTable.
+            self.destroyAtom(garbageAtoms)
+            
         
     def addAtom(self, moleculeID:int, specie:str, coordinates:Quantity):
         
@@ -201,7 +227,7 @@ class StateRegistry:
         else:
             iterable = True
             # atomID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
-            assert recursive, "Cannot destroy this iterable with atomIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass a iterable of iterables. It will always raise this exception."
+            assert recursive, "Cannot destroy this iterable with atomIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
         
         # Is atomID a iterable? If yes loop over it and call this function on each element.
         if iterable:
@@ -219,6 +245,9 @@ class StateRegistry:
             self._atomTable = self._atomTable[self._atomTable.atomID != atomID]
             # Count the number of atoms left in the molecule.
             numberOfAtomsInMolecule = len(self._atomTable[self._atomTable.moleculeID == moleculeID].index)
+            
+            # TODO: DESTROY BONDS
+            
             # Delete the molecule, if it does not contain any atoms.
             if numberOfAtomsInMolecule == 0:
                 self.destroyMolecule(moleculeID)
