@@ -266,7 +266,10 @@ class StateRegistry:
             # Count the number of atoms left in the molecule.
             numberOfAtomsInMolecule = len(self._atomTable[self._atomTable.moleculeID == moleculeID].index)
             
-            # TODO: DESTROY BONDS
+            # Get IDs of bonds, that belong to destroyed atoms. Used to remove these bonds from registry.
+            garbageBonds = self._bondTable[ self._bondTable.atomID1 == atomID or self._bondTable.atomID2 == atomID ]["bondID"]
+            # Remove bonds to deleted atoms from registry.
+            self.destroyBond(garbageBonds)
             
             # Delete the molecule, if it does not contain any atoms.
             if numberOfAtomsInMolecule == 0:
@@ -274,6 +277,53 @@ class StateRegistry:
         
     def replaceAtom(self, atomID:int, specie:str):
         raise NotImplementedError("Replacing Atoms not implemented yet.")
+        
+    def addBond(self, atomID1:int, atomID2:int, order:int=1):
+        pass
+    
+    def destroyBond(self, bondID:list[int], recursive:bool = True):
+        """
+        Remove a bond. TODO: DOCSTRING ...
+
+        Parameters
+        ----------
+        bondID : list[int]
+            DESCRIPTION.
+        recursive : bool, optional
+            DESCRIPTION. The default is True.
+
+        Raises
+        ------
+        this
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """      
+        
+        # Check if the bondID is iterable.
+        # Save the result in the variable iterable.        
+        try:
+            _ = iter(bondID)
+        except TypeError:
+            iterable = False
+        else:
+            iterable = True
+            # bondID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
+            assert recursive, "Cannot destroy this iterable with bondIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
+        
+        # Is bondID a iterable? If yes loop over it and call this function on each element.
+        if iterable:
+            for bond in bondID:
+                self.destroyBond(bond, recursive=False)
+        # If bondID is not iterable, remove the entry with the given bondID
+        else:
+            # Check type of bondID
+            assert isinstance(bondID, int), "Destroying bond failed! BondID must be integer or itereable of integer!"
+            # Remove bond from registry.
+            self._bondTable = self._bondTable[ self._bondTable.bondID != bondID ]
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
