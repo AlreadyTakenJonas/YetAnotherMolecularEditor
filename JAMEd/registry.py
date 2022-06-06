@@ -120,6 +120,26 @@ class StateRegistry:
         return newMoleculeID
     
     def destroyMolecule(self, moleculeID:list[int], recursive:bool=True):
+        """
+        Destroy molecule. TODO: DOCSTRING ...
+
+        Parameters
+        ----------
+        moleculeID : list[int]
+            DESCRIPTION.
+        recursive : bool, optional
+            DESCRIPTION. The default is True.
+
+        Raises
+        ------
+        this
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Check if the moleculeID is iterable.
         # Save the result in the variable iterable.        
