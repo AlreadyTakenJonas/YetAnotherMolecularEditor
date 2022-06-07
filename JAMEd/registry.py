@@ -18,6 +18,7 @@ from packaging import version
 from pint import Quantity
 from . import PINT_UNIT_REGISTRY
 import re
+import time
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -61,6 +62,14 @@ META_DATA = {
     "fileLocation": "",    # From which file was the StateRegistry read from?
     "version": __version__ # Current version of this package
 }
+SAVE_TO_FILENAME = {
+    "atom"      : "atoms.csv",
+    "bond"      : "bonds.csv",
+    "meta"      : "meta.yaml", 
+    "setting"   : "settings.yaml",
+    "molecule"  : "molecules.csv"
+}
+
 
 class StateRegistry:
     
@@ -85,6 +94,11 @@ class StateRegistry:
         self._metadata      = META_DATA
         # Create periodic table of the elements (contains information about elements, used to create new atoms)
         self._periodicTable = pd.read_csv("data/periodicTable.csv")
+        
+        # Create a directory to quick save changes to. Use the current unix time stamp to create a unique folder.
+        now = int( time.time() )
+        self._quickSaveDir = Path(f"../registryQuickSaves/{now}")
+        self._quickSaveDir.mkdir()
         
         
     def addMolecule(self, amount:int=1) -> list[int]:
@@ -115,6 +129,9 @@ class StateRegistry:
                                     "name": [ f"Molecule #{ID}" for ID in newMoleculeID ]})
         # Insert the new row into the molecule table
         self._moleculeTable = pd.concat([self._moleculeTable, newMolecule], ignore_index = True)
+        
+        # Save molecule table to quick save directory
+        self._moleculeTable.to_csv( self._quickSaveDir/SAVE_TO_FILENAME["molecule"] )
         
         # Return IDs of generated molecules.
         return newMoleculeID
@@ -214,6 +231,10 @@ class StateRegistry:
         
         self._atomTable = pd.concat([self._atomTable, newAtom], ignore_index=True)
         
+        
+        # Save atom table to quick save directory
+        self._atomTable.to_csv( self._quickSaveDir/SAVE_TO_FILENAME["atom"] )
+        
         return newAtomID
     
     def destroyAtom(self, atomID:list[int], recursive:bool = True):
@@ -274,6 +295,11 @@ class StateRegistry:
             # Delete the molecule, if it does not contain any atoms.
             if numberOfAtomsInMolecule == 0:
                 self.destroyMolecule(moleculeID)
+                
+            # Save atom table to quick save directory
+            self._atomTable.to_csv( self._quickSaveDir/SAVE_TO_FILENAME["atom"] )
+            # Save molecule table to quick save directory
+            self._moleculeTable.to_csv( self._quickSaveDir/SAVE_TO_FILENAME["molecule"] )
         
     def replaceAtom(self, atomID:int, specie:str):
         raise NotImplementedError("Replacing Atoms not implemented yet.")
@@ -324,6 +350,9 @@ class StateRegistry:
             assert isinstance(bondID, int), "Destroying bond failed! BondID must be integer or itereable of integer!"
             # Remove bond from registry.
             self._bondTable = self._bondTable[ self._bondTable.bondID != bondID ]
+            
+            # Save molecule table to quick save directory
+            self.bondTable.to_csv( self._quickSaveDir/SAVE_TO_FILENAME["bond"] )
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
@@ -370,15 +399,15 @@ class StateRegistry:
         # Write the state of the StateRegistry to a temporary directory and move them into a zip archive.
         with tempfile.TemporaryDirectory() as tmp:
             # Write data on atoms, molecules and bonds to csv files
-            self._atomTable.to_csv( tmp+"/atoms.csv" )
-            self._moleculeTable.to_csv( tmp+"/molecules.csv" )        
-            self._bondTable.to_csv( tmp+"/bonds.csv" )
+            self._atomTable.to_csv( tmp+"/"+SAVE_TO_FILENAME["atom"] )
+            self._moleculeTable.to_csv( tmp+"/"+SAVE_TO_FILENAME["molecule"] )        
+            self._bondTable.to_csv( tmp+"/"+SAVE_TO_FILENAME["bond"] )
             # Dump the settings dictionary to yaml file
             dumpedSettings = yaml.safe_dump(self._settings)
-            Path(tmp+"/settings.yaml").write_text(dumpedSettings)
+            Path(tmp+"/"+SAVE_TO_FILENAME["setting"]).write_text(dumpedSettings)
             # Dump the meta data dictionary to yaml file
             dumpedMetadata = yaml.sage_dump(self._metadata)
-            Path(tmp+"/meta.yaml").write_text(dumpedMetadata)
+            Path(tmp+"/"+SAVE_TO_FILENAME["meta"]).write_text(dumpedMetadata)
             
             # Move all files in temporary directory to zip archive
             with ZipFile(path.resolve(), "w") as archive:
@@ -388,6 +417,47 @@ class StateRegistry:
                     # Use just the name of the file in the archive, not the whole path (arcname=file.name)
                     archive.write(file.resolve(), arcname=file.name)
             
+    
+    @classmethod
+    def quickLoad(cls, path:Union[str, Path], forceLoad:bool=False) -> "StateRegistry":
+        """
+        Wrapper function around load method. Used to load quick saved StateRegistry
+        
+        Load StateRegistry quick saved to file. Load position of atoms, bonds and metadata on molecules and settings.
+
+        Parameters
+        ----------
+        path : Union[str, Path]
+            File to load the StateRegistry from..
+        forceLoad : bool, optional
+            Load files that were written by a propably incompatible version of this package. The default is False.
+
+        Raises
+        ------
+        TypeError
+            Path was passed the wrong type.
+        FileNotFoundError
+            Given file does not exist.
+        AssertionError
+            You're trying to load a file, that was written by a propably incompatible version of this package. If you want to take your chances, use forceLoad=True.
+
+        Returns
+        -------
+        register : StateRegistry
+            Instance of this class.
+
+        """
+    
+        # Open a temporary directory and write the quicksaved files into a zip archive in that temp directory
+        # This is done, because the load method expects a zip archive and the quick saving does not create an archive.
+        with tempfile.TemporaryDirectory() as dir:
+            with ZipFile(dir.name, "w") as archive:
+                # Move every file into the zip archive
+                # Use just the name of the file in the archive, not the whole path (arcname=file.name)    
+                for file in Path(path).glob("*"):
+                    archive.write(file.resolve(), arcname=file.name)
+            # Call the load method to do the heavy lifting.        
+            return cls.load(path=path, forceLoad=forceLoad)
     
     @classmethod
     def load(cls, path:Union[str, Path], forceLoad:bool=False) -> "StateRegistry":
@@ -437,7 +507,7 @@ class StateRegistry:
         log.info("Read meta data ...")
         with ZipFile(path.resolve(), "r") as archive:
             # Read the meta.yaml in the zip archive
-            with archive.open("meta.yaml") as file:
+            with archive.open(SAVE_TO_FILENAME["meta"]) as file:
                 register._metadata = yaml.sage_load(file)
         
         # Check the meta data to make sure the rest of the archive is compatible with the current version.
@@ -463,15 +533,15 @@ class StateRegistry:
         # Read the zip archive.
         with ZipFile(path.resolve(), "r") as archive:
             # Read the csv files and load them into the attributes of the StateRegistry.
-            with archive.open("atoms.csv") as file:
+            with archive.open(SAVE_TO_FILENAME["atom"]) as file:
                 register._atomTable = pd.read_csv(file)
-            with archive.open("molecules.csv") as file:
+            with archive.open(SAVE_TO_FILENAME["molecule"]) as file:
                 register._moleculeTable = pd.read_csv(file)
-            with archive.open("bonds.csv") as file:
+            with archive.open(SAVE_TO_FILENAME["bond"]) as file:
                 register._bondTable = pd.read_csv(file)
             
             # Read the settings from yaml files and save them into StateRegistry.
-            with archive.open("settings.yaml") as file:
+            with archive.open(SAVE_TO_FILENAME["setting"]) as file:
                 register._settings = yaml.safe_load(file)
         
         # Save the file this StateRegistry was read from in the settings dictionary.
