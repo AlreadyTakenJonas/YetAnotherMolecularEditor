@@ -288,7 +288,7 @@ class StateRegistry:
         
     def addBond(self, atomID1:int, atomID2:int, order:int=1):
         """
-        Add a bond between two atoms. An existing bond between these two atoms will be destroyed.
+        Add a bond between two atoms. An existing bond between these two atoms will updated with the new bond order.
 
         Parameters
         ----------
@@ -320,24 +320,37 @@ class StateRegistry:
             atomID2 = _
         
         # Do these atoms already have a bond? If so, destroy it.
-        existingBond = self._bondTable[ self._bondTable.atomID1 == atomID1 and self._bondTable.atomID2 == atomID2 ].bondID.tolist()
-        if len(existingBond) > 0: self.destroyBond(existingBond)
+        # Destroy bond instead of altering it might be overkill, but this ensures that there are not multiple bonds between atoms by accident.
+        existingBondID = self._bondTable[ self._bondTable.atomID1 == atomID1 and self._bondTable.atomID2 == atomID2 ].tolist()
+        if len(existingBondID) > 0:
+            log.info("Bond between {atomID1} and {atomID2} already exists at StateRegistry {str(self)}. Update bond table ...")
+            
+            # Update bond table with new bond order.
+            newBondID = existingBondID[0]
+            self._bondTable[ self._bondTable.bondID == newBondID ].order = order
+            
+            log.info("Updated bondID {newBondID} at StateRegistry {str(self)}.")
+        else:
+            
+            log.info(f"Create bond between Atom {atomID1} and {atomID2} at StateRegistry {str(self)} ...")
+            
+            # Create a new ID for the bond.
+            # Set ID to 0 if there are no bonds in registry yet
+            if len(self._bondTable) == 0: newBondID = 0
+            # Get the highest ID already taken and add 1 to get the new ID
+            else:                         newBondID = max(self._bondTable.bondID) + 1
         
-        # Create a new ID for the bond.
-        # Set ID to 0 if there are no bonds in registry yet
-        if len(self._bondTable) == 0: newBondID = 0
-        # Get the highest ID already taken and add 1 to get the new ID
-        else:                         newBondID = max(self._bondTable.bondID) + 1
+            # Create new bond an add it to the bond table
+            newBond = pd.DataFrame({"bondID": [newBondID],
+                                    "atomID1": [atomID1],
+                                    "atomID2": [atomID2],
+                                    "order": [order]
+                                    })
+            self._bondTable = pd.concat([self._bondTable, newBond], ignore_index=True)
         
-        # Create new bond an add it to the bond table
-        newBond = pd.DataFrame({"bondID": [newBondID],
-                                "atomID1": [atomID1],
-                                "atomID2": [atomID2],
-                                "order": [order]
-                               })
-        self._bondTable = pd.concat([self._bondTable, newBond], ignore_index=True)
+            log.info(f"Created bond ID {newBondID} between Atom {atomID1} and {atomID2} at StateRegistry {str(self)}.")
         
-        # Return the ID of the created bond
+        # Return the ID of the created/updated bond
         return newBondID
         
         
@@ -366,8 +379,10 @@ class StateRegistry:
         except TypeError:
             iterable = False
         else:
+            log.info(f"Destroy bondID's {bondID} recursively at StateRegistry {str(self)}.")
             iterable = True
             # bondID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
+            log.error(f"Refuse to destroy bondIDs {bondID} at StateRegistry {str(self)} non-recursively!")
             assert recursive, "Cannot destroy this iterable with bondIDs! Pass recursive=True to destroy every bond in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
         
         # Is bondID a iterable? If yes loop over it and call this function on each element.
@@ -380,6 +395,8 @@ class StateRegistry:
             assert isinstance(bondID, int), "Destroying bond failed! BondID must be integer or itereable of integer!"
             # Remove bond from registry.
             self._bondTable = self._bondTable[ self._bondTable.bondID != bondID ]
+            
+            log.info("Destroyed bond ID {bondID} at StateRegistry {str(self)}.")
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
