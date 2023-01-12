@@ -287,23 +287,71 @@ class StateRegistry:
         raise NotImplementedError("Replacing Atoms not implemented yet.")
         
     def addBond(self, atomID1:int, atomID2:int, order:int=1):
-        pass
+        """
+        Add a bond between two atoms. An existing bond between these two atoms will be destroyed.
+
+        Parameters
+        ----------
+        atomID1 : int
+            ID of the first atom of the bond.
+        atomID2 : int
+            ID of the second atom of the bond.
+        order : int, optional
+            Bond order. Only positive non-zero integers allowed. The default is 1.
+
+        Returns
+        -------
+        newBondID : int
+            ID of the newly created bond.
+
+        """
+        # Check the input.
+        assert isinstance(atomID1, int), f"First atom ID must be int not {type(atomID1)}!"
+        assert isinstance(atomID2, int), f"Second atom ID must be int not {type(atomID2)}!"
+        assert isinstance(order, int) and order > 0, f"Bond order must be positive non 0 integer not '{order}'!"
+        assert atomID1 in self._atomTable.atomID, f"Atom with ID {atomID1} not found!"
+        assert atomID2 in self._atomTable.atomID, f"Atom with ID {atomID2} not found!"
+        assert atomID1 != atomID2, "Can't create bond between identical atoms!"
+        
+        # Sort atomIDs by value.
+        if atomID1 > atomID2:
+            _       = atomID1
+            atomID1 = atomID2
+            atomID2 = _
+        
+        # Do these atoms already have a bond? If so, destroy it.
+        existingBond = self._bondTable[ self._bondTable.atomID1 == atomID1 and self._bondTable.atomID2 == atomID2 ].bondID.tolist()
+        if len(existingBond) > 0: self.destroyBond(existingBond)
+        
+        # Create a new ID for the bond.
+        # Set ID to 0 if there are no bonds in registry yet
+        if len(self._bondTable) == 0: newBondID = 0
+        # Get the highest ID already taken and add 1 to get the new ID
+        else:                         newBondID = max(self._bondTable.bondID) + 1
+        
+        # Create new bond an add it to the bond table
+        newBond = pd.DataFrame({"bondID": [newBondID],
+                                "atomID1": [atomID1],
+                                "atomID2": [atomID2],
+                                "order": [order]
+                               })
+        self._bondTable = pd.concat([self._bondTable, newBond], ignore_index=True)
+        
+        # Return the ID of the created bond
+        return newBondID
+        
+        
     
     def destroyBond(self, bondID:list[int], recursive:bool = True):
         """
-        Remove a bond. TODO: DOCSTRING ...
+        Destroy an existin bond between two atoms. Multiple bonds can be destroyed with one function call.
 
         Parameters
         ----------
         bondID : list[int]
-            DESCRIPTION.
+            Single bond ID or a list of bond IDs. The corresponding bonds will be cleaved.
         recursive : bool, optional
-            DESCRIPTION. The default is True.
-
-        Raises
-        ------
-        this
-            DESCRIPTION.
+            Enable support for nested lists of bondIds. This function will raise an exception if the level of recursion is bigger than 2. The default is True.
 
         Returns
         -------
@@ -320,7 +368,7 @@ class StateRegistry:
         else:
             iterable = True
             # bondID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
-            assert recursive, "Cannot destroy this iterable with bondIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
+            assert recursive, "Cannot destroy this iterable with bondIDs! Pass recursive=True to destroy every bond in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
         
         # Is bondID a iterable? If yes loop over it and call this function on each element.
         if iterable:
