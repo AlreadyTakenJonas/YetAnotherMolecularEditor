@@ -107,7 +107,7 @@ class StateRegistry:
         Returns
         -------
         newMoleculeID : list of int
-            The ids of all created molecules.
+            The unique IDs of all created molecules. IDs of deleted molecules are not reused.
 
         """
         # Create a new ID for the molecule.
@@ -177,37 +177,104 @@ class StateRegistry:
             
         
     def addAtom(self, moleculeID:int, specie:str, coordinates:Quantity):
+        """
+        Add a new entrty to the table of atoms and assign it to a certain molecule.
         
-        #
-        # TODO: COMMENT, DOCSTRING
-        #
+        Details on parsing the atom-type/species:
+            Write the mass (optional) in front of the element symbol and the charge (optional) behind the element symbol.
+            The mass and charge need to be integer numbers. The charges +1 and -1 can be shortened to '+' and '-'.
+            E.g. species="2H+" will add an deuterium ion with one positive charge to the molecule.
+            E.g. species="56Fe3+" will add Fe with mass 56u and a charge of +3 to the molecule.
+            E.g. species="C" will add one carbon atom without charge and a mass of 12u to the molecule.
+            E.g. species="O2-" will add a double negatively charge oxygen atom of mass 16u to the atom.
+            Be aware: This function does not check if the given mass or charge makes sense! It only checks the element symbol.
+
+        Parameters
+        ----------
+        moleculeID : int
+            Which molecule does the atom belong to?
+        specie : str
+            String characterising the atom's element-type, charge, mass. See above for details. 
+        coordinates : Quantity
+            Three cartesian coordinates of the atom. Coordinates must have a unit provided with pints Quantity. Use the pint registry defined in __init__.py!
+
+        Raises
+        ------
         
+            ValueError: Raised if species requests an element-type unknown to JAMEd.
+
+        Returns
+        -------
+        newAtomID : int
+            Unique ID of the newly created atom. This ID is not only unique to the molecule, but unique to all defined atoms in this StateRegistry. IDs of deleted atoms are not reused.
+
+        """
+        #
+        # Check the user input.
+        #
+        # Check specie-string type
+        assert isinstance(specie, str), f"Specie-string must be string not {type(specie)}!"
+        # Is the moleculeID and integer?
         assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
+        # Does the molecule with ID moleculeID exist?
         assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
+        # Check if the coordinates have a unit.
         assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
-        assert len(coordinates) == 3, f"You need to pass three coordinates! {len(coordinates)} was given!"
+        # Check if there are three cartesian coordinates.
+        assert len(coordinates) == 3, f"You need to pass three cartesian coordinates! {len(coordinates)} was given!"
+        # Check the specie-string for illegal characters: anything, but letters, digits, "+" and "+".
+        assert re.search("[^( A-Z a-z \d + - )]", specie) == None, f"Illegal specie-string! Unallowed character in '{specie}'. Only digits, letters, '+' and '-' allowed!"
+        assert re.search("\d$", specie) == None, "Charge ambigous! Add '+' or '-' at the end of the charge!"
         
-        elementSymbol = re.findall("[A-Z][a-z]?", specie)[0]
-        
-        element = self._periodicTable.loc[self._periodicTable.symbol.str.fullmatch(elementSymbol)]
-        if len(element) == 0: raise  ValueError(f"I don't know the element {elementSymbol}!")
-        
+        #
+        # Interpret the specie-string
+        #
+        # Extract mass, charge and element symbol from specie-string.
+        # Extract the element symbol: One or two letters. First letter is capitalised, the second is not.
+        elementSymbol = re.findall("[A-Z][a-z]?", specie)
+        # Extract the mass: Digits at the beginning of the string.
         mass = re.findall("^\d+", specie)
-        if len(mass) == 0: mass = int(element.mass)
-        else:              mass = int(mass)
+        # Extract the charge: Single or multiple digits with following '+' or '-'-sign.
         charge = re.findall("\d*[+,-]", specie)
+        
+        # Check syntax of specie-string
+        # Did the user include multiple element symbols? Big no-no.
+        assert len(elementSymbol) == 1, f"The specie-string may only contain one element symbol, not {len(elementSymbol)}! (Given {elementSymbol})"
+        # Did the user define multiple charges for the same atom?
+        assert len(charge) < 2, f"The specie-string may not define more than one charge! {len(charge)} were defined: {charge}."
+        
+        # Get the element symbol from list of matches.
+        elementSymbol = elementSymbol[0]
+        # Is this a valid element? Check JAMEd's version of the periodic table.
+        element = self._periodicTable.loc[self._periodicTable.symbol.str.fullmatch(elementSymbol)]
+        if len(element) == 0: raise ValueError(f"I don't know the element {elementSymbol}!")
+        if len(element)  > 1: raise LookupError(f"Element symbol {elementSymbol} is found {len(element)} times in JAMEd's internal periodic table. Critical failure!")
+        
+        # Interprete charge: Use given mass or mass from periodic table as default.
+        if len(mass) == 0: mass = int(element.mass)     # Use default mass from JAMEd's periodic table.
+        else:              mass = int(mass[0])          # Use given value: Get mass from list of matched values.
+
+        # Interpret the charge: Use given charge and 0 as default.
+        # Default to charge 0 if no charge is given.
         if len(charge) == 0: charge = 0
         else:
+            # re.findall returns a list of matches. Get the actual matched string from the list.
             charge = charge[1]
+            # Get the digits of the number (all except last character)
             number = charge[:-1]
+            # Get the sign of the charge (only last character)
             sign   = charge[-1]
+            
             charge = int(f"{sign}{number}")
         
         # Convert coordinates to angstrom and then to float numbers
         coordinates = tuple([ float(coord.to("angstrom") / PINT_UNIT_REGISTRY.angstrom) for coord in coordinates ])
         
+        # Create new atom ID. Start at ID 0, if the table is empty. Add one to the larges ID, if table is not empty.
         if len(self._atomTable) == 0: newAtomID = 0
         else:                         newAtomID = max(self._atomTable.atomID) + 1
+        
+        # Create a new entry for the atomTable.
         newAtom = pd.DataFrame({"moleculeID": [moleculeID],
                                 "atomID": [newAtomID],
                                 "cartesian": [coordinates],
@@ -220,8 +287,10 @@ class StateRegistry:
                                 "fixedInternalCoordinates": [False]
                                })
         
+        # Add the entry to the table.
         self._atomTable = pd.concat([self._atomTable, newAtom], ignore_index=True)
         
+        # Return ID of newly created atom.
         return newAtomID
     
     def destroyAtom(self, atomID:list[int], recursive:bool = True):
