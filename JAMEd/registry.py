@@ -17,8 +17,7 @@ from .version import __version__
 from packaging import version
 from pint import Quantity
 from . import PINT_UNIT_REGISTRY
-import re
-import time
+from .utilities import parseChemicalSpeciesNotation
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -30,16 +29,16 @@ log.addHandler(logging.NullHandler())
 #
 # What will be saved about every atom of a molecule?
 ATOM_PROPERTY_LIST = [
-    "moleculeID",   # To which molecule does the atom belong (unique identifier for molecule)?
-    "atomID",       # Unique ID
-    "label",        # Descriptive label
-    "element",      # How many protons does the atom has?
-    "mass",         # How much mass does the atom has (not the exact mass, rounded to integer)?
-    "charge",       # How much charge does the atom has? 
-    "cartesian",    # Where is the atom in 3D space (tupel of three coordinates)?
+    "moleculeID",    # To which molecule does the atom belong (unique identifier for molecule)?
+    "atomID",        # Unique ID
+    "elementSymbol", # Descriptive label
+    "protons",       # How many protons does the atom has?
+    "mass",          # How much mass does the atom has (not the exact mass, rounded to integer)?
+    "charge",        # How much charge does the atom has? 
+    "cartesian",     # Where is the atom in 3D space (tupel of three coordinates)?
     "fixedInternalCoordinates", # Is the atom fixed in space (internal coordinates)?
-    "color",        # What color does the atom have when shown on the screen?
-    "radius"        # How big is the atom?
+    "color",         # What color does the atom have when shown on the screen?
+    "radius"         # How big is the atom?
 ]
 # What will be saved about every molecule?
 MOLECULE_PROPERTY_LIST = [
@@ -92,8 +91,6 @@ class StateRegistry:
         self._settings      = DEFAULT_SETTINGS
         # Create dictionary to save meta data
         self._metadata      = META_DATA
-        # Create periodic table of the elements (contains information about elements, used to create new atoms)
-        self._periodicTable = pd.read_csv("data/periodicTable.csv")
         
         
     def addMolecule(self, amount:int=1) -> list[int]:
@@ -188,21 +185,7 @@ class StateRegistry:
         assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
         assert len(coordinates) == 3, f"You need to pass three coordinates! {len(coordinates)} was given!"
         
-        elementSymbol = re.findall("[A-Z][a-z]?", specie)[0]
-        
-        element = self._periodicTable.loc[self._periodicTable.symbol.str.fullmatch(elementSymbol)]
-        if len(element) == 0: raise  ValueError(f"I don't know the element {elementSymbol}!")
-        
-        mass = re.findall("^\d+", specie)
-        if len(mass) == 0: mass = int(element.mass)
-        else:              mass = int(mass)
-        charge = re.findall("\d*[+,-]", specie)
-        if len(charge) == 0: charge = 0
-        else:
-            charge = charge[1]
-            number = charge[:-1]
-            sign   = charge[-1]
-            charge = int(f"{sign}{number}")
+        element, mass, charge = parseChemicalSpeciesNotation(specie)
         
         # Convert coordinates to angstrom and then to float numbers
         coordinates = tuple([ float(coord.to("angstrom") / PINT_UNIT_REGISTRY.angstrom) for coord in coordinates ])
@@ -212,8 +195,8 @@ class StateRegistry:
         newAtom = pd.DataFrame({"moleculeID": [moleculeID],
                                 "atomID": [newAtomID],
                                 "cartesian": [coordinates],
-                                "label": [elementSymbol],
-                                "element": element.element,
+                                "elementSymbol": element.symbol,    # Element symbol
+                                "protons": element.protons, # Proton number
                                 "charge": [charge],
                                 "mass": [mass],
                                 "color": element.color,
@@ -287,8 +270,53 @@ class StateRegistry:
     def replaceAtom(self, atomID:int, specie:str):
         raise NotImplementedError("Replacing Atoms not implemented yet.")
         
-    def addBond(self, atomID1:int, atomID2:int, order:int=1):
-        pass
+        assert isinstance(atomID, int), "atomID must be an integer!"
+        assert atomID in self._atomTable.atomID, f"Atom with ID {atomID} does not exist!"
+        
+        element, mass, charge = parseChemicalSpeciesNotation(specie)
+        
+        # TODO ...
+        
+    def addBond(self, atomID1:int, atomID2:int, order:float=1):
+        """
+        Add a bond between two atoms. DOCSTRING ...
+
+        Parameters
+        ----------
+        atomID1 : int
+            DESCRIPTION.
+        atomID2 : int
+            DESCRIPTION.
+        order : float or int, optional
+            Bond order, e.g. 2 means double bond. Non-integer values can be used to signal weak bonds or whatever. Bonds are just made up and don't mean nothing. The default is 1.
+        
+        Returns
+        -------
+        newBondID.
+
+        """
+        # Check type of atomID and bond order
+        assert isinstance(atomID1, int) and isinstance(atomID2, int), "atomID1 and atomID2 must be integers!"
+        assert isinstance(order, float) or isinstance(order, int), "The bond order must be a float or integer!"
+        
+        # Do atomIDs exist?
+        assert atomID1 in self._atomTable.atomID, f"Atom with ID {atomID1} not found!"
+        assert atomID2 in self._atomTable.atomID, f"Atom with ID {atomID2} not found!"
+        
+        # Find not existing ID for new bond
+        if len(self._bondTable) == 0: newBondID = 0
+        else:                         newBondID = max(self._bondTable.bondID) + 1
+        # Create new entry for self._bondTable
+        newBond = pd.DataFrame({"bondID"    : [newBondID],
+                                "atomID1"   : [atomID1],
+                                "atomID2"   : [atomID2],
+                                "order"     : [order]
+                               })
+        # Append new entry to self._bondTable
+        self._bondTable = pd.concat([self._bondTable, newBond], ignore_index=True)
+        
+        # Return ID of newly created bond.
+        return newBondID
     
     def destroyBond(self, bondID:list[int], recursive:bool = True):
         """
