@@ -105,7 +105,7 @@ class StateRegistry:
         Returns
         -------
         newMoleculeID : list of int
-            The ids of all created molecules.
+            The unique IDs of all created molecules. IDs of deleted molecules are not reused.
 
         """
         # Create a new ID for the molecule.
@@ -175,23 +175,64 @@ class StateRegistry:
             
         
     def addAtom(self, moleculeID:int, specie:str, coordinates:Quantity):
+        """
+        Add a new entrty to the table of atoms and assign it to a certain molecule.
         
-        #
-        # TODO: COMMENT, DOCSTRING
-        #
+        Details on parsing the atom-type/species:
+            Write the mass (optional) in front of the element symbol and the charge (optional) behind the element symbol.
+            The mass and charge need to be integer numbers. The charges +1 and -1 can be shortened to '+' and '-'.
+            E.g. species="2H+" will add an deuterium ion with one positive charge to the molecule.
+            E.g. species="56Fe3+" will add Fe with mass 56u and a charge of +3 to the molecule.
+            E.g. species="C" will add one carbon atom without charge and a mass of 12u to the molecule.
+            E.g. species="O2-" will add a double negatively charge oxygen atom of mass 16u to the atom.
+            Be aware: This function does not check if the given mass or charge makes sense! It only checks the element symbol.
+
+        Parameters
+        ----------
+        moleculeID : int
+            Which molecule does the atom belong to?
+        specie : str
+            String characterising the atom's element-type, charge, mass. See above for details. 
+        coordinates : Quantity
+            Three cartesian coordinates of the atom. Coordinates must have a unit provided with pints Quantity. Use the pint registry defined in __init__.py!
+
+        Raises
+        ------
         
+            ValueError: Raised if species requests an element-type unknown to JAMEd.
+
+        Returns
+        -------
+        newAtomID : int
+            Unique ID of the newly created atom. This ID is not only unique to the molecule, but unique to all defined atoms in this StateRegistry. IDs of deleted atoms are not reused.
+
+        """
+        #
+        # Check the user input.
+        #
+        # Check specie-string type
+        assert isinstance(specie, str), f"Specie-string must be string not {type(specie)}!"
+        # Is the moleculeID and integer?
         assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
+        # Does the molecule with ID moleculeID exist?
         assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
+        # Check if the coordinates have a unit.
         assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
-        assert len(coordinates) == 3, f"You need to pass three coordinates! {len(coordinates)} was given!"
         
+        # Check if there are three cartesian coordinates.
+        assert len(coordinates) == 3, f"You need to pass three cartesian coordinates! {len(coordinates)} was given!"
+        
+        # Parse species string. Get element symbol, mass, charge and other element specific properties.
         element, mass, charge = parseChemicalSpeciesNotation(specie)
         
         # Convert coordinates to angstrom and then to float numbers
         coordinates = tuple([ float(coord.to("angstrom") / PINT_UNIT_REGISTRY.angstrom) for coord in coordinates ])
         
+        # Create new atom ID. Start at ID 0, if the table is empty. Add one to the larges ID, if table is not empty.
         if len(self._atomTable) == 0: newAtomID = 0
         else:                         newAtomID = max(self._atomTable.atomID) + 1
+        
+        # Create a new entry for the atomTable.
         newAtom = pd.DataFrame({"moleculeID": [moleculeID],
                                 "atomID": [newAtomID],
                                 "cartesian": [coordinates],
@@ -204,8 +245,10 @@ class StateRegistry:
                                 "fixedInternalCoordinates": [False]
                                })
         
+        # Add the entry to the table.
         self._atomTable = pd.concat([self._atomTable, newAtom], ignore_index=True)
         
+        # Return ID of newly created atom.
         return newAtomID
     
     def destroyAtom(self, atomID:list[int], recursive:bool = True):
@@ -277,62 +320,80 @@ class StateRegistry:
         
         # TODO ...
         
-    def addBond(self, atomID1:int, atomID2:int, order:float=1):
+    
+    def addBond(self, atomID1:int, atomID2:int, order:int=1):
         """
-        Add a bond between two atoms. DOCSTRING ...
+        Add a bond between two atoms. An existing bond between these two atoms will updated with the new bond order.
 
         Parameters
         ----------
         atomID1 : int
-            DESCRIPTION.
+            ID of the first atom of the bond.
         atomID2 : int
-            DESCRIPTION.
-        order : float or int, optional
-            Bond order, e.g. 2 means double bond. Non-integer values can be used to signal weak bonds or whatever. Bonds are just made up and don't mean nothing. The default is 1.
-        
+            ID of the second atom of the bond.
+        order : float, optional
+            Bond order. Only positive non-zero floats allowed. The default is 1. Use non-zero bond orders to signal special bonds or weak bonds or whatever. Bonds are made up and make no quantum chemical sense. This shit is just for monkey brains.
+
         Returns
         -------
-        newBondID.
+        newBondID : int
+            ID of the newly created bond.
 
         """
-        # Check type of atomID and bond order
-        assert isinstance(atomID1, int) and isinstance(atomID2, int), "atomID1 and atomID2 must be integers!"
-        assert isinstance(order, float) or isinstance(order, int), "The bond order must be a float or integer!"
-        
-        # Do atomIDs exist?
+        # Check the input.
+        assert isinstance(atomID1, int), f"First atom ID must be int not {type(atomID1)}!"
+        assert isinstance(atomID2, int), f"Second atom ID must be int not {type(atomID2)}!"
+        assert ( isinstance(order, int) or isinstance(order, float) ) and order > 0, f"Bond order must be positive non 0 float not '{order}'!"
         assert atomID1 in self._atomTable.atomID, f"Atom with ID {atomID1} not found!"
         assert atomID2 in self._atomTable.atomID, f"Atom with ID {atomID2} not found!"
+        assert atomID1 != atomID2, "Can't create bond between identical atoms!"
         
-        # Find not existing ID for new bond
-        if len(self._bondTable) == 0: newBondID = 0
-        else:                         newBondID = max(self._bondTable.bondID) + 1
-        # Create new entry for self._bondTable
-        newBond = pd.DataFrame({"bondID"    : [newBondID],
-                                "atomID1"   : [atomID1],
-                                "atomID2"   : [atomID2],
-                                "order"     : [order]
-                               })
-        # Append new entry to self._bondTable
-        self._bondTable = pd.concat([self._bondTable, newBond], ignore_index=True)
+        # Sort atomIDs by value.
+        atomID1, atomID2 = sorted([atomID1, atomID2])
         
-        # Return ID of newly created bond.
+        # Do these atoms already have a bond? Update entry with new bond order.
+        existingBondID = self._bondTable[ self._bondTable.atomID1 == atomID1 and self._bondTable.atomID2 == atomID2 ].tolist()
+        if len(existingBondID) > 0:
+            log.info("Bond between {atomID1} and {atomID2} already exists at StateRegistry {str(self)}. Update bond table ...")
+            
+            # Update bond table with new bond order.
+            newBondID = existingBondID[0]
+            self._bondTable[ self._bondTable.bondID == newBondID ].order = order
+            
+            log.info("Updated bondID {newBondID} at StateRegistry {str(self)}.")
+        else:
+            
+            log.info(f"Create bond between Atom {atomID1} and {atomID2} at StateRegistry {str(self)} ...")
+            
+            # Create a new ID for the bond.
+            # Set ID to 0 if there are no bonds in registry yet
+            if len(self._bondTable) == 0: newBondID = 0
+            # Get the highest ID already taken and add 1 to get the new ID
+            else:                         newBondID = max(self._bondTable.bondID) + 1
+        
+            # Create new bond an add it to the bond table
+            newBond = pd.DataFrame({"bondID" : [newBondID],
+                                    "atomID1": [atomID1],
+                                    "atomID2": [atomID2],
+                                    "order"  : [order]
+                                    })
+            self._bondTable = pd.concat([self._bondTable, newBond], ignore_index=True)
+        
+            log.info(f"Created bond ID {newBondID} between Atom {atomID1} and {atomID2} at StateRegistry {str(self)}.")
+        
+        # Return the ID of the created/updated bond
         return newBondID
-    
+        
     def destroyBond(self, bondID:list[int], recursive:bool = True):
         """
-        Remove a bond. TODO: DOCSTRING ...
+        Destroy an existin bond between two atoms. Multiple bonds can be destroyed with one function call.
 
         Parameters
         ----------
         bondID : list[int]
-            DESCRIPTION.
+            Single bond ID or a list of bond IDs. The corresponding bonds will be cleaved.
         recursive : bool, optional
-            DESCRIPTION. The default is True.
-
-        Raises
-        ------
-        this
-            DESCRIPTION.
+            Enable support for nested lists of bondIds. This function will raise an exception if the level of recursion is bigger than 2. The default is True.
 
         Returns
         -------
@@ -347,9 +408,11 @@ class StateRegistry:
         except TypeError:
             iterable = False
         else:
+            log.info(f"Destroy bondID's {bondID} recursively at StateRegistry {str(self)}.")
             iterable = True
             # bondID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
-            assert recursive, "Cannot destroy this iterable with bondIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
+            log.error(f"Refuse to destroy bondIDs {bondID} at StateRegistry {str(self)} non-recursively!")
+            assert recursive, "Cannot destroy this iterable with bondIDs! Pass recursive=True to destroy every bond in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
         
         # Is bondID a iterable? If yes loop over it and call this function on each element.
         if iterable:
@@ -361,6 +424,8 @@ class StateRegistry:
             assert isinstance(bondID, int), "Destroying bond failed! BondID must be integer or itereable of integer!"
             # Remove bond from registry.
             self._bondTable = self._bondTable[ self._bondTable.bondID != bondID ]
+            
+            log.info("Destroyed bond ID {bondID} at StateRegistry {str(self)}.")
         
     def save(self, path:Union[str, Path], override:bool=False):
         """
@@ -398,7 +463,7 @@ class StateRegistry:
             log.info(f"{path.resolve()} already exists.")
             # May the existing file be overritten?
             if override == False:
-                log.error(f"Can't save molecules to {path.resolve}, because it already exists.")
+                log.error(f"Can't save molecules to {path.resolve()}, because it already exists.")
                 raise FileExistsError(f"Can't save molecules to {path.resolve()}, because it already exists.")
         
         # Is the suffix right? If not it is alright.
@@ -417,7 +482,7 @@ class StateRegistry:
             dumpedMetadata = yaml.sage_dump(self._metadata)
             Path(tmp+"/"+SAVE_TO_FILENAME["meta"]).write_text(dumpedMetadata)
             
-            # Move all files in temporary directory to zip archive
+            # Move all files in temporary director´y to zip archive
             with ZipFile(path.resolve(), "w") as archive:
                 # Loop over all files in the temporary directory
                 for file in Path(tmp).glob("*"):

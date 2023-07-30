@@ -16,6 +16,15 @@ def parseChemicalSpeciesNotation(specie:str):
     """
     TODO ... Parse a string of a chemical specie to get elementSymbol, mass, charge and other information.
 
+    Details on parsing the atom-type/species:
+        Write the mass (optional) in front of the element symbol and the charge (optional) behind the element symbol.
+        The mass and charge need to be integer numbers. The charges +1 and -1 can be shortened to '+' and '-'.
+        E.g. species="2H+" will add an deuterium ion with one positive charge to the molecule.
+        E.g. species="56Fe3+" will add Fe with mass 56u and a charge of +3 to the molecule.
+        E.g. species="C" will add one carbon atom without charge and a mass of 12u to the molecule.
+        E.g. species="O2-" will add a double negatively charge oxygen atom of mass 16u to the atom.
+        Be aware: This function does not check if the given mass or charge makes sense! It only checks the element symbol.
+
     Parameters
     ----------
     specie : str
@@ -41,6 +50,11 @@ def parseChemicalSpeciesNotation(specie:str):
     
     # Check input type
     assert isinstance(specie, str), "Specie must be a string!"
+    
+    # Check the specie-string for illegal characters: anything, but letters, digits, "+" and "+".
+    assert re.search("[^( A-Z a-z \d + - )]", specie) == None, f"Illegal specie-string! Unallowed character in '{specie}'. Only digits, letters, '+' and '-' allowed!"
+    assert re.search("\d$", specie) == None, "Charge ambigous! Add '+' or '-' at the end of the charge!"
+
     
     # Extract element symbol from species (e.g. Fe or H)
     elementSymbol = re.findall("[A-Z][a-z]?", specie)[0]
