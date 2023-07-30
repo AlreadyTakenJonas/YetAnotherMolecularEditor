@@ -7,6 +7,7 @@ Created on Sat Jul 29 12:24:48 2023
 
 import pandas as pd
 import re
+from . import PINT_UNIT_REGISTRY
 
 
 # Create periodic table of the elements (contains information about elements, used to create new atoms)
@@ -64,9 +65,10 @@ def parseChemicalSpeciesNotation(specie:str):
     if len(element) == 0: raise  ValueError(f"I don't know the element {elementSymbol}!")
     
     # Get the mass from species string if given. Get default from periodic table
+    # Convert mass to atomic mass units with pint
     mass = re.findall("^\d+", specie)
-    if len(mass) == 0: mass = int(element.mass)
-    else:              mass = int(mass)
+    if len(mass) == 0: mass = int(element.mass) * PINT_UNIT_REGISTRY.amu
+    else:              mass = int(mass) * PINT_UNIT_REGISTRY.amu
     
     # Get charge from species string if given. Default is neutral charge (0).
     charge = re.findall("\d*[+,-]", specie)

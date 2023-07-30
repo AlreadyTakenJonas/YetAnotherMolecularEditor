@@ -1,4 +1,4 @@
-"symbol","protons","mass","color","radius","valence"
-"H",1,1,"white",0.529177210903,1
-"D",1,2,"grey",0.529177210903,1
-"C",6,12,"grey",0.7,4
+"symbol","protons","mass","color","radius","valence","isotopeAbundance"
+"H",1,1,"white",0.529177210903,1,0.999885
+"D",1,2,"grey",0.529177210903,1,0.0115
+"C",6,12,"grey",0.7,4,0.989

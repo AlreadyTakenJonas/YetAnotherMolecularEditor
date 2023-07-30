@@ -17,7 +17,7 @@ from .version import __version__
 from packaging import version
 from pint import Quantity
 from . import PINT_UNIT_REGISTRY
-from .utilities import parseChemicalSpeciesNotation
+from .utilities import parseChemicalSpeciesNotation, PERIODICTABLE
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -172,11 +172,74 @@ class StateRegistry:
             garbageAtoms = self._atomTable[ self._atomTable.moleculeID == moleculeID ].atomID
             # Destroy all atoms belonging to the molecule. After all atoms are destroyed, the molecule will be removed from the _moleculeTable.
             self.destroyAtom(garbageAtoms)
-            
+    
+    def _addAtom(self, moleculeID:int, protons:int, coordinates:Quantity, mass:Quantity=None, charge:int=0):
+        """
+        TODO ...
+        """
+        #
+        # Check user input
+        #
+        # Is the moleculeID and integer?
+        assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
+        # Does the molecule with ID moleculeID exist?
+        assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
+        # Check if the coordinates have a unit.
+        assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
+        # Check if there are three cartesian coordinates.
+        assert len(coordinates) == 3, f"You need to pass three cartesian coordinates! {len(coordinates)} was given!"
+        # Check charge
+        assert isinstance(charge, int), "Charge must be an integer!"
+        # Check number of protons
+        assert protons in PERIODICTABLE.protons, f"I don't recognise element number {protons}!"
+        
+        # Convert coordinates to angstrom and then to float numbers
+        coordinates = tuple([ float(coord.to("angstrom") / PINT_UNIT_REGISTRY.angstrom) for coord in coordinates ])
+        
+        # Grab element properties from periodic table
+        element = PERIODICTABLE.loc[PERIODICTABLE.protons == protons]
+        
+        # Determine mass of species. Use weight mean of all isotopes if no mass is given,
+        if mass is None:
+            # Determine mass as weighted mean of all isotopes.
+            mass = sum( element.mass * element.isotopeAbundance ) / sum( element.isotopeAbundance )
+        else:
+            # Check mass
+            assert isinstance(mass, Quantity), "Mass may not be unitless! Use pints unit registry defined in the packages __init__.py!"
+            assert mass > 0, "Mass must be bigger than 0!"
+            # Convert mass to atomic mass units and then to float.
+            mass = mass.to("amu") / PINT_UNIT_REGISTRY.amu
+        
+        # If there multiple isotopes in the periodic table, we have to filter all but one out. This prevents creating mutliple entries for the same atom in the atom table.
+        # Keep only the most abundant isotope. Keep in mind, if the mass was not provided to this function, this function does not use the mass of the most abundant isotope, but the weighted mean of all isotopes.
+        element = element.loc[element.isotopeAbundance == max(element.isotopeAbundance)]
+        
+        # Create new atom ID. Start at ID 0, if the table is empty. Add one to the larges ID, if table is not empty.
+        if len(self._atomTable) == 0: newAtomID = 0
+        else:                         newAtomID = max(self._atomTable.atomID) + 1
+        
+        # Create a new entry for the atomTable.
+        newAtom = pd.DataFrame({"moleculeID": [moleculeID],
+                                "atomID": [newAtomID],
+                                "cartesian": [coordinates],
+                                "elementSymbol": element.symbol,
+                                "protons": element.protons,
+                                "charge": [charge],
+                                "mass": [mass],
+                                "color": element.color,
+                                "radius": element.radius,
+                                "fixedInternalCoordinates": [False]
+                               })
+        
+        # Add the entry to the table.
+        self._atomTable = pd.concat([self._atomTable, newAtom], ignore_index=True)
+        
+        # Return ID of newly created atom.
+        return newAtomID
         
     def addAtom(self, moleculeID:int, specie:str, coordinates:Quantity):
         """
-        Add a new entrty to the table of atoms and assign it to a certain molecule.
+        Add a new entrty to the table of atoms and assign it to a certain molecule. Wrapper around self._addAtom().
         
         Details on parsing the atom-type/species:
             Write the mass (optional) in front of the element symbol and the charge (optional) behind the element symbol.
@@ -196,60 +259,18 @@ class StateRegistry:
         coordinates : Quantity
             Three cartesian coordinates of the atom. Coordinates must have a unit provided with pints Quantity. Use the pint registry defined in __init__.py!
 
-        Raises
-        ------
-        
-            ValueError: Raised if species requests an element-type unknown to JAMEd.
-
         Returns
         -------
         newAtomID : int
             Unique ID of the newly created atom. This ID is not only unique to the molecule, but unique to all defined atoms in this StateRegistry. IDs of deleted atoms are not reused.
 
-        """
-        #
-        # Check the user input.
-        #
-        # Check specie-string type
-        assert isinstance(specie, str), f"Specie-string must be string not {type(specie)}!"
-        # Is the moleculeID and integer?
-        assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
-        # Does the molecule with ID moleculeID exist?
-        assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
-        # Check if the coordinates have a unit.
-        assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
-        
-        # Check if there are three cartesian coordinates.
-        assert len(coordinates) == 3, f"You need to pass three cartesian coordinates! {len(coordinates)} was given!"
-        
+        """        
         # Parse species string. Get element symbol, mass, charge and other element specific properties.
         element, mass, charge = parseChemicalSpeciesNotation(specie)
         
-        # Convert coordinates to angstrom and then to float numbers
-        coordinates = tuple([ float(coord.to("angstrom") / PINT_UNIT_REGISTRY.angstrom) for coord in coordinates ])
+        # Call function for adding atoms.
+        return self._addAtom(moleculeID=moleculeID, protons=element.protons, charge=charge, coordinates=coordinates)
         
-        # Create new atom ID. Start at ID 0, if the table is empty. Add one to the larges ID, if table is not empty.
-        if len(self._atomTable) == 0: newAtomID = 0
-        else:                         newAtomID = max(self._atomTable.atomID) + 1
-        
-        # Create a new entry for the atomTable.
-        newAtom = pd.DataFrame({"moleculeID": [moleculeID],
-                                "atomID": [newAtomID],
-                                "cartesian": [coordinates],
-                                "elementSymbol": element.symbol,    # Element symbol
-                                "protons": element.protons, # Proton number
-                                "charge": [charge],
-                                "mass": [mass],
-                                "color": element.color,
-                                "radius": element.radius,
-                                "fixedInternalCoordinates": [False]
-                               })
-        
-        # Add the entry to the table.
-        self._atomTable = pd.concat([self._atomTable, newAtom], ignore_index=True)
-        
-        # Return ID of newly created atom.
-        return newAtomID
     
     def destroyAtom(self, atomID:list[int], recursive:bool = True):
         """
@@ -311,9 +332,70 @@ class StateRegistry:
             if numberOfAtomsInMolecule == 0:
                 self.destroyMolecule(moleculeID)
         
+    def _replaceAtom(self, atomID:int, protons:int, mass:Quantity=None, charge:int=0):
+        """
+        TODO ...
+
+        Parameters
+        ----------
+        atomID : int
+            DESCRIPTION.
+        protons : int
+            DESCRIPTION.
+        mass : Quantity, optional
+            DESCRIPTION. The default is None.
+        charge : int, optional
+            DESCRIPTION. The default is 0.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        # Check user input.
+        # Check atomID
+        assert isinstance(atomID, int), "atomID must be an integer!"
+        assert atomID in self._atomTable.atomID, f"Atom with ID {atomID} does not exist!"
+        # Check charge
+        assert isinstance(charge, int), "Charge must be an integer!"
+        # Check number of protons
+        assert protons in PERIODICTABLE.protons, f"I don't recognise element number {protons}!"
+        
+        # Grab element properties from periodic table
+        element = PERIODICTABLE.loc[PERIODICTABLE.protons == protons]
+        
+        # Determine mass of species. Use weight mean of all isotopes if no mass is given,
+        if mass is None:
+            # Determine mass as weighted mean of all isotopes.
+            mass = sum( element.mass * element.isotopeAbundance ) / sum( element.isotopeAbundance )
+        else:
+            # Check mass
+            assert isinstance(mass, Quantity), "Mass may not be unitless! Use pints unit registry defined in the packages __init__.py!"
+            assert mass > 0, "Mass must be bigger than 0!"
+            # Convert mass to atomic mass units and then to float.
+            mass = mass.to("amu") / PINT_UNIT_REGISTRY.amu
+        
+        # If there multiple isotopes in the periodic table, we have to filter all but one out. This prevents creating mutliple entries for the same atom in the atom table.
+        # Keep only the most abundant isotope. Keep in mind, if the mass was not provided to this function, this function does not use the mass of the most abundant isotope, but the weighted mean of all isotopes.
+        element = element.loc[element.isotopeAbundance == max(element.isotopeAbundance)]
+        
+        # Update entry in atom table. Replace element symbol, mass, proton number, charge, color and radius.
+        # Leave atomID, moleculeID, fixedInternalCoordinates, cartesian coordinates unchaged.
+        self._atomTable.loc[ self._atomTable.atomID == atomID,
+            ["elementSymbol",
+             "protons",
+             "charge",
+             "mass",
+             "color",
+             "radius"
+            ]
+        ] = element.symbol, protons, charge, mass, element.color, element.radius
+        
+        
     def replaceAtom(self, atomID:int, specie:str):
         """
-        TODO ...        
+        TODO ...        Wrapper around _replaceAtom
         
         Details on parsing the atom-type/species:
             Write the mass (optional) in front of the element symbol and the charge (optional) behind the element symbol.
@@ -336,25 +418,11 @@ class StateRegistry:
         None.
 
         """    
-        # Check user input.
-        assert isinstance(atomID, int), "atomID must be an integer!"
-        assert atomID in self._atomTable.atomID, f"Atom with ID {atomID} does not exist!"
-        
         # Parse the chemical species notation to get element symbol, mass, charge and element specific properties.
         element, mass, charge = parseChemicalSpeciesNotation(specie)
         
-        # Update entry in atom table. Replace element symbol, mass, proton number, charge, color and radius.
-        # Leave atomID, moleculeID, fixedInternalCoordinates, cartesian coordinates unchaged.
-        self._atomTable.loc[ self._atomTable.atomID == atomID,
-            ["elementSymbol",   # Element symbol
-             "protons",         # Proton number
-             "charge",
-             "mass",
-             "color",
-             "radius"
-            ]
-        ] = element.symbol, element.protons, charge, mass, element.color, element.radius
-        
+        # Call _replaceAtom to do heavy lifting.
+        self._replaceAtom(atomID=atomID, protons=element.protons, mass=mass, charge=charge)
     
     def addBond(self, atomID1:int, atomID2:int, order:int=1):
         """
