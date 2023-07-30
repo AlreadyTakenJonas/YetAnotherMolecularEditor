@@ -293,6 +293,7 @@ class StateRegistry:
         else:
             # Is the atomID an integer?
             assert isinstance(atomID, int), "Destroying atom failed! AtomID must be integer or itereable of integer!"
+            assert atomID in self._atomTable.atomID, f"Destroying atom failed! AtomID {atomID} does not exist!"
             
             # Get the moleculeID the deleted atom belongs to. Used to delete the molecule, if all its atoms are deleted.
             moleculeID = self._atomTable.loc[ self._atomTable["atomID"] == atomID ]["moleculeID"]
@@ -311,14 +312,39 @@ class StateRegistry:
                 self.destroyMolecule(moleculeID)
         
     def replaceAtom(self, atomID:int, specie:str):
-        raise NotImplementedError("Replacing Atoms not implemented yet.")
-        
+        """
+        TODO ...        
+
+        Parameters
+        ----------
+        atomID : int
+            DESCRIPTION.
+        specie : str
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """    
+        # Check user input.
         assert isinstance(atomID, int), "atomID must be an integer!"
         assert atomID in self._atomTable.atomID, f"Atom with ID {atomID} does not exist!"
         
+        # Parse the chemical species notation to get element symbol, mass, charge and element specific properties.
         element, mass, charge = parseChemicalSpeciesNotation(specie)
         
-        # TODO ...
+        # Update entry in atom table. Replace element symbol, mass, proton number, charge, color and radius.
+        # Leave atomID, moleculeID, fixedInternalCoordinates, cartesian coordinates unchaged.
+        self._atomTable.loc[ self._atomTable.atomID == atomID,
+            ["elementSymbol",   # Element symbol
+             "protons",         # Proton number
+             "charge",
+             "mass",
+             "color",
+             "radius"
+            ]
+        ] = element.symbol, element.protons, charge, mass, element.color, element.radius
         
     
     def addBond(self, atomID1:int, atomID2:int, order:int=1):
