@@ -314,6 +314,15 @@ class StateRegistry:
     def replaceAtom(self, atomID:int, specie:str):
         """
         TODO ...        
+        
+        Details on parsing the atom-type/species:
+            Write the mass (optional) in front of the element symbol and the charge (optional) behind the element symbol.
+            The mass and charge need to be integer numbers. The charges +1 and -1 can be shortened to '+' and '-'.
+            E.g. species="2H+" will add an deuterium ion with one positive charge to the molecule.
+            E.g. species="56Fe3+" will add Fe with mass 56u and a charge of +3 to the molecule.
+            E.g. species="C" will add one carbon atom without charge and a mass of 12u to the molecule.
+            E.g. species="O2-" will add a double negatively charge oxygen atom of mass 16u to the atom.
+            Be aware: This function does not check if the given mass or charge makes sense! It only checks the element symbol.
 
         Parameters
         ----------
