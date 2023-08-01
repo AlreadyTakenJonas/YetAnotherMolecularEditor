@@ -18,6 +18,8 @@ from packaging import version
 from pint import Quantity
 from . import PINT_UNIT_REGISTRY
 from .utilities import parseChemicalSpeciesNotation, PERIODICTABLE
+from .parser import FileFormatParser
+from contextlib import contextmanager
 
 # Create logger
 log = logging.getLogger(__name__)
@@ -684,3 +686,11 @@ class StateRegistry:
         
         # Return the instance of the StateRegistry.
         return register
+    
+    @contextmanager
+    def borrow(self, moleculeID:int):
+        # TODO 
+        # 1. filter for moleculeID or IDs
+        # 2. yield FileFormatParser for selected atoms
+        # 3. update internal atom table with content of FileFormatParser.atomTable
+        raise NotImplementedError("TODO. Use this context manager to read atom coordinates, export to file, run quantum chemistry stuff and update registry with new coordinates.")
