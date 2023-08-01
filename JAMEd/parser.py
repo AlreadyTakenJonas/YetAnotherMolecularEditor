@@ -33,8 +33,8 @@ class FileFormatParser:
             assert len(self._atomTable) == len(value), "The number of given atoms does not match the number of atoms in the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
             # Check if order and element type of input matches existing atom table.
             assert (self._atomTable.elementSymbol == value.elementSymbol).all(), "The order and or element of the atoms does not match the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
-            # Update coordinates and fixed atoms in atom table.
-            self._atomTable.update(value)
+            # Update coordinates in atom table.
+            self._atomTable.cartesian = value.cartesian
         # Enter completly new atom table.
         else:
             commonColumns = set(self._atomTable.columns) & set(value.columns)
