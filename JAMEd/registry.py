@@ -688,9 +688,10 @@ class StateRegistry:
         return register
     
     @contextmanager
-    def borrow(self, moleculeID:int):
+    def borrowCoordinates(self, moleculeID:int):
         # TODO 
         # 1. filter for moleculeID or IDs
         # 2. yield FileFormatParser for selected atoms
-        # 3. update internal atom table with content of FileFormatParser.atomTable
+        # 3. lock borrowed moleculeID. Grant only read access to borrowed molecules until context manager is done. Prevents fuck up, when multiple threads or something access same instance of registry.
+        # 4. update internal atom table with content of FileFormatParser.atomTable
         raise NotImplementedError("TODO. Use this context manager to read atom coordinates, export to file, run quantum chemistry stuff and update registry with new coordinates.")
