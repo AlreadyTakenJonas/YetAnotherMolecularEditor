@@ -81,3 +81,13 @@ def parseChemicalSpeciesNotation(specie:str):
     
     # Return element properties in periodic table, mass and charge
     return element, mass, charge
+
+
+def isIterable(obj):
+    try:
+        _ = iter(obj)
+    except TypeError:
+        iterable = False
+    else:
+        iterable = True
+    return iterable

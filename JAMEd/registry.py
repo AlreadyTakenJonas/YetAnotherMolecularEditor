@@ -17,7 +17,7 @@ from .version import __version__
 from packaging import version
 from pint import Quantity
 from . import PINT_UNIT_REGISTRY
-from .utilities import parseChemicalSpeciesNotation, PERIODICTABLE
+from .utilities import parseChemicalSpeciesNotation, PERIODICTABLE, isIterable
 from .parser import FileFormatParser
 from contextlib import contextmanager
 
@@ -47,7 +47,8 @@ MOLECULE_PROPERTY_LIST = [
     "moleculeID",       # Unique ID
     "name",             # Descriptive name
     "centerOfInertia",  # Coordinates of center of inertia in 3D space (tupel of three coordinates)?
-    "symmetry"          # Molecules point group
+    "symmetry",         # Molecules point group
+    "writeAccess"       # Can atoms belonging to this molecules be replaced, destroyed? Can atoms be added to this molecule? Can this molecule be destroyed?
 ]
 # What will be saved about every bond in a molecule?
 BOND_PROPERTY_LIST = [
@@ -120,7 +121,8 @@ class StateRegistry:
         
         # Create a new row to insert into the self._moleculeTable
         newMolecule = pd.DataFrame({"moleculeID": newMoleculeID,
-                                    "name": [ f"Molecule #{ID}" for ID in newMoleculeID ]})
+                                    "name": [ f"Molecule #{ID}" for ID in newMoleculeID ],
+                                    "writeAccess": [True for ID in newMoleculeID]})
         # Insert the new row into the molecule table
         self._moleculeTable = pd.concat([self._moleculeTable, newMolecule], ignore_index = True)
         
@@ -149,19 +151,10 @@ class StateRegistry:
 
         """
         
-        # Check if the moleculeID is iterable.
-        # Save the result in the variable iterable.        
-        try:
-            _ = iter(moleculeID)
-        except TypeError:
-            iterable = False
-        else:
-            iterable = True
+        # Is molecule a iterable? If yes loop over it and call this function on each element.
+        if isIterable(moleculeID):
             # moleculeID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
             assert recursive, "Cannot destroy this iterable with moleculeIDs! Pass recursive=True to destroy every molecule in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
-        
-        # Is atomID a iterable? If yes loop over it and call this function on each element.
-        if iterable:
             for molecule in moleculeID:
                 self.destroyMolecule(molecule, recursive=False)
         
@@ -169,6 +162,9 @@ class StateRegistry:
         else:
             # Is the moleculeID an integer?
             assert isinstance(moleculeID, int), "Destroying molecule failed! MoleculeID must be integer or itereable of integer!"
+            
+            # Is the molecule used by another method at the moment? The borrowMolecule method e.g. blocks other functions while doing its thing.
+            assert self._moleculeTable.loc[self._moleculeTable.moleculeID==moleculeID].writeAccess, f"Destroying molecule {moleculeID} failed! Currently no write access for this molecule! Maybe another method call is blocking this action."
             
             # Get a list of all atomIDs belonging to the deleted molecule
             garbageAtoms = self._atomTable[ self._atomTable.moleculeID == moleculeID ].atomID
@@ -186,6 +182,9 @@ class StateRegistry:
         assert isinstance(moleculeID, int), f"Molecule IDs must be int not {type(moleculeID)}!"
         # Does the molecule with ID moleculeID exist?
         assert moleculeID in self._moleculeTable.moleculeID, f"Molecule with ID {moleculeID} not found!"
+        # Is the molecule used by another method at the moment? The borrowMolecule method e.g. blocks other functions while doing its thing.
+        assert self._moleculeTable.loc[self._moleculeTable.moleculeID==moleculeID].writeAccess, f"Manipulating molecule {moleculeID} failed! Currently no write access for this molecule! Maybe another method call is blocking this action."
+        
         # Check if the coordinates have a unit.
         assert isinstance(coordinates, Quantity), "Coordinates may not be unitless! Use pints unit registry defined in the packages __init__.py!"
         # Check if there are three cartesian coordinates.
@@ -295,20 +294,11 @@ class StateRegistry:
         None.
 
         """
-        
-        # Check if the atomID is iterable.
-        # Save the result in the variable iterable.        
-        try:
-            _ = iter(atomID)
-        except TypeError:
-            iterable = False
-        else:
-            iterable = True
+        # Is atomID a iterable? If yes loop over it and call this function on each element.
+        if isIterable(atomID):
             # atomID is iterable. Check if we want to continue. This option is needed to avoid recalling this function on nested iterables recursively.
             assert recursive, "Cannot destroy this iterable with atomIDs! Pass recursive=True to destroy every atom in the iterable. Don't pass an iterable of iterables. It will always raise this exception."
-        
-        # Is atomID a iterable? If yes loop over it and call this function on each element.
-        if iterable:
+            
             for atom in atomID:
                 self.destroyAtom(atom, recursive=False)
         
@@ -317,6 +307,10 @@ class StateRegistry:
             # Is the atomID an integer?
             assert isinstance(atomID, int), "Destroying atom failed! AtomID must be integer or itereable of integer!"
             assert atomID in self._atomTable.atomID, f"Destroying atom failed! AtomID {atomID} does not exist!"
+            
+            # Is the molecule used by another method at the moment? The borrowMolecule method e.g. blocks other functions while doing its thing.
+            moleculeID = self._atomTable.loc[self._atomTable.atomID==atomID].moleculeID
+            assert self._moleculeTable.loc[self._moleculeTable.moleculeID==moleculeID].writeAccess, f"Manipulating molecule {moleculeID} failed! Currently no write access for this molecule! Maybe another method call is blocking this action."
             
             # Get the moleculeID the deleted atom belongs to. Used to delete the molecule, if all its atoms are deleted.
             moleculeID = self._atomTable.loc[ self._atomTable["atomID"] == atomID ]["moleculeID"]
@@ -359,6 +353,11 @@ class StateRegistry:
         # Check atomID
         assert isinstance(atomID, int), "atomID must be an integer!"
         assert atomID in self._atomTable.atomID, f"Atom with ID {atomID} does not exist!"
+        
+        # Is the molecule used by another method at the moment? The borrowMolecule method e.g. blocks other functions while doing its thing.
+        moleculeID = self._atomTable.loc[self._atomTable.atomID==atomID].moleculeID
+        assert self._moleculeTable.loc[self._moleculeTable.moleculeID==moleculeID].writeAccess, f"Manipulating molecule {moleculeID} failed! Currently no write access for this molecule! Maybe another method call is blocking this action."
+        
         # Check charge
         assert isinstance(charge, int), "Charge must be an integer!"
         # Check number of protons
@@ -688,17 +687,80 @@ class StateRegistry:
         return register
     
     @contextmanager
-    def borrowCoordinates(self, moleculeID:int):
-        # TODO 
-        # 1. filter for moleculeID or IDs
-        # 2. yield FileFormatParser for selected atoms
-        # 3. lock borrowed moleculeID. Grant only read access to borrowed molecules until context manager is done. Prevents fuck up, when multiple threads or something access same instance of registry.
-        # 4. update internal atom table with content of FileFormatParser.atomTable
-        # 5. Check if new coordinates are proper replacement for current atom coordinates.
-        #    # Check if length of input matches the existing atom table.
-        #    assert len(self._atomTable) == len(value), "The number of given atoms does not match the number of atoms in the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
-        #    # Check if order and element type of input matches existing atom table.
-        #    assert (self._atomTable.elementSymbol == value.elementSymbol).all(), "The order and or element of the atoms does not match the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
-        #    # Update coordinates in atom table.
-        #    self._atomTable.cartesian = value.cartesian
-        raise NotImplementedError("TODO. Use this context manager to read atom coordinates, export to file, run quantum chemistry stuff and update registry with new coordinates.")
+    def borrowGeometry(self, moleculeID:Union(int, list[int])):
+        """
+        TODO ... Returns context manager. Can be used to extract atom coordinates in variety of file formats (e.g. xyz, see FileFormatParser for details) and reimport the atom coordinates of the borrowed molecule.
+        
+        This can be used to make coordinates available to a quantum chemistry program for e.g. geometry optimisation and replace the geometry in the state registry with the optimised coordinates.
+        
+        Keep in mind: You cannot add, remove atoms or change the order of the atoms in the output file.
+        
+        Keep in mind: Borrowed molecules can not be changed by other method calls until this method is done.
+        
+        Keep in mind: If you borrow multiple molecules, this function will treat them as a single molecule and put all coordinates into the same output file.
+
+        Parameters
+        ----------
+        moleculeID : Union(int, list[int])
+            DESCRIPTION.
+
+        Raises
+        ------
+        AssertionError
+            DESCRIPTION.
+
+        Yields
+        ------
+        formatParser : TYPE
+            DESCRIPTION.
+
+        """
+        if isIterable(moleculeID):
+            for i in moleculeID: assert isinstance(i, int), "MoleculeIDs must be integers or list of integers!"
+        else:
+            assert isinstance(moleculeID, int), "MoleculeIDs must be integers or list of integers!"
+            moleculeID = [moleculeID] # Make moleculeID a list to make pandas opertion work the same for single moleculeID and multiple moleculeIDs
+        
+        # Is the molecule used by another method at the moment? The borrowMolecule method e.g. blocks other functions while doing its thing.
+        assert self._moleculeTable.loc[self._moleculeTable.moleculeID.isin(moleculeID)].writeAccess, f"Borrowing molecule {moleculeID} failed! Currently no write access for this molecule! Maybe another method call is blocking this action."
+        
+        # Revoke write acces from the borrowed molecules. This prevents other code from changing the molecule while its borrowed.
+        log.info(f"Revoke write access to borrowed molecules {moleculeID}.")
+        self._moleculeTable.loc[self._moleculeTable.moleculeID.isin(moleculeID),"writeAccess"] = False
+        
+        # Get file parser for converting borrowed atom coordinates to between different file formats
+        formatParser = FileFormatParser()
+        # Store current atom coordinates in file parser.
+        formatParser.atomTable = self._atomTable.loc[self._atomTable.moleculeID.isin(moleculeID)].sort_values("atomID")
+        
+        try:
+            # End of __enter__() part of context manager
+            # Expose format parser to with statement.
+            # The atom table is already stored in this format parser.
+            # The atom coordinates can be read from this object in different file formats (e.g. xyz) and the atom coordinates can be updated from the same file fromats.
+            # Changes to the atom coordinates in formatParser will be passed on to the atom table in the __exit__() part of the context manager.
+            yield formatParser
+            # Beginning of __exit__() part of context manager after with statement.
+            
+            # Check if the with statement returns coordinates that match the borrowes molecule (same number of atoms. same list of elements).
+            borrowedAtomTable = self._atomTable.loc[self._atomTable.moleculeID.isin(moleculeID)].sort_values("atomID")
+            assert len(borrowedAtomTable) == len(formatParser.atomTable), ""
+            assert (borrowedAtomTable.elementSymbol == formatParser.atomTable.elementSymbol).all(), ""
+            
+            # Update the atom coordinates in the atomTable.
+            borrowedAtomTable.cartesian = formatParser.atomTable.cartesian
+            borrowedAtomTable = borrowedAtomTable[["atomID","cartesian"]].set_index("atomID")
+            self._atomTable.set_index("atomID", inplace=True)
+            self._atomTable.update(borrowedAtomTable)
+            self._atomTable.reset_index(inplace=True)
+            
+        except Exception as e:
+            # Inform user there was an exception and borrowing didn't work.
+            log.critical(f"Exception while borrowing moleculeIDs {moleculeID}. Cannot update state registry with borrowed atom coordinates!")
+            raise e
+            
+        finally:
+            # Clean up code.
+            # Restore write acces from the borrowed molecules. This prevents other code from changing the molecule while its borrowed.
+            log.info(f"Restore write access to borrowed molecules {moleculeID}.")
+            self._moleculeTable.loc[self._moleculeTable.moleculeID.isin(moleculeID),"writeAccess"] = True
