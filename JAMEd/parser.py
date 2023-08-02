@@ -12,7 +12,8 @@ from . import PINT_UNIT_REGISTRY
 class FileFormatParser:
     
     def __init__(self):
-        self._atomTable = pd.DataFrame(columns=["elementSymbol", "cartesian", "fixedInternalCoordinates"])
+        self._atomTableTemplate = pd.DataFrame(columns=["elementSymbol", "cartesian", "fixedInternalCoordinates"])
+        self._atomTable = self._atomTableTemplate
     
     #
     #   DEFINE INTERACTION WITH DATA FRAME FOR STORING ATOM COORDINATES.
@@ -27,18 +28,12 @@ class FileFormatParser:
         assert isinstance(value, pd.DataFrame), "atomTable must be a pandas DataFrame!"
         assert "elementSymbol" in value, "atomTable must contain 'elementSymbol' column!"
         assert "cartesian" in value, "atomTable must contain 'cartesian' column!"
-        # Update atom table, if one already exists.
-        if len(self._atomTable) != 0:
-            # Check if length of input matches the existing atom table.
-            assert len(self._atomTable) == len(value), "The number of given atoms does not match the number of atoms in the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
-            # Check if order and element type of input matches existing atom table.
-            assert (self._atomTable.elementSymbol == value.elementSymbol).all(), "The order and or element of the atoms does not match the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
-            # Update coordinates in atom table.
-            self._atomTable.cartesian = value.cartesian
-        # Enter completly new atom table.
-        else:
-            commonColumns = set(self._atomTable.columns) & set(value.columns)
-            self._atomTable[commonColumns] = value[commonColumns]
+
+        # Empty existing atom table
+        self._atomTable = self._atomTableTemplate
+        # Add new input to now empty atom table. Keep all columns in atom table. Don't create new columns in atom table.
+        commonColumns = set(self._atomTable.columns) & set(value.columns)        
+        self._atomTable[commonColumns] = value[commonColumns]
     
     #
     #   DEFINE GETTER & SETTER FOR PASING AND CREATING XYZ-FILES

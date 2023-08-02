@@ -694,4 +694,11 @@ class StateRegistry:
         # 2. yield FileFormatParser for selected atoms
         # 3. lock borrowed moleculeID. Grant only read access to borrowed molecules until context manager is done. Prevents fuck up, when multiple threads or something access same instance of registry.
         # 4. update internal atom table with content of FileFormatParser.atomTable
+        # 5. Check if new coordinates are proper replacement for current atom coordinates.
+        #    # Check if length of input matches the existing atom table.
+        #    assert len(self._atomTable) == len(value), "The number of given atoms does not match the number of atoms in the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
+        #    # Check if order and element type of input matches existing atom table.
+        #    assert (self._atomTable.elementSymbol == value.elementSymbol).all(), "The order and or element of the atoms does not match the currently available atom table! Create a new FileFormatParser if you want to parse a new molecule!"
+        #    # Update coordinates in atom table.
+        #    self._atomTable.cartesian = value.cartesian
         raise NotImplementedError("TODO. Use this context manager to read atom coordinates, export to file, run quantum chemistry stuff and update registry with new coordinates.")
