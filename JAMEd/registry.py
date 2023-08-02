@@ -746,6 +746,9 @@ class StateRegistry:
             borrowedAtomTable = self._atomTable.loc[self._atomTable.moleculeID.isin(moleculeID)].sort_values("atomID")
             assert len(borrowedAtomTable) == len(formatParser.atomTable), ""
             assert (borrowedAtomTable.elementSymbol == formatParser.atomTable.elementSymbol).all(), ""
+    
+            # TODO: Check column data types.             
+            raise NotImplementedError("CHECKING DATA COLUMN TYPES MISSING. elementSymbol must be str, cartesian must be tuple of three Quantities with unit of length")
             
             # Update the atom coordinates in the atomTable.
             borrowedAtomTable.cartesian = formatParser.atomTable.cartesian
